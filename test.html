@@ -32,6 +32,7 @@
     const canvas = document.getElementById('test-canvas');
     const ctx = canvas.getContext('2d');
     let activePointers = {};
+    let lastPointers = {};
     let fingerCounter = 1;
     let targets = [];
 
@@ -127,10 +128,10 @@
     function drawPointers() {
       let w = canvas.width;
       let h = canvas.height;
-      for (let id in activePointers) {
-        let pt = activePointers[id];
-        ctx.strokeStyle = '#f00';
-        ctx.fillStyle = '#f00';
+
+      let drawPtr = (pt, color) => {
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(pt.x - 40, pt.y); ctx.lineTo(pt.x + 40, pt.y);
@@ -146,6 +147,13 @@
         if (txtY > h - 10) txtY = pt.y - 30;
 
         ctx.fillText(txt, txtX, txtY);
+      };
+
+      for (let id in lastPointers) {
+        drawPtr(lastPointers[id], '#a00'); // Dark red for last pointer
+      }
+      for (let id in activePointers) {
+        drawPtr(activePointers[id], '#f00'); // Bright red for active pointer
       }
     }
 
@@ -165,6 +173,12 @@
 
     function updateTouch(e) {
       e.preventDefault();
+
+      // Clear last pointers on new interaction
+      if (e.type === 'touchstart' && Object.keys(activePointers).filter(k => k.startsWith('touch_')).length === 0) {
+        lastPointers = {};
+      }
+
       let newActive = {};
       for (let i = 0; i < e.touches.length; i++) {
         let t = e.touches[i];
@@ -172,6 +186,14 @@
         let label = activePointers[idStr] ? activePointers[idStr].label : `Finger ${fingerCounter++}`;
         newActive[idStr] = { x: t.clientX, y: t.clientY, label: label };
       }
+
+      // Check for ended touches
+      for (let id in activePointers) {
+        if (id.startsWith('touch_') && !newActive[id]) {
+          lastPointers[id] = activePointers[id];
+        }
+      }
+
       if (e.touches.length === 0) fingerCounter = 1;
 
       // Keep mouse if exists
@@ -188,6 +210,9 @@
     canvas.addEventListener('touchcancel', updateTouch, { passive: false });
 
     canvas.addEventListener('mousedown', (e) => {
+      if (Object.keys(activePointers).length === 0) {
+        lastPointers = {};
+      }
       activePointers['mouse'] = { x: e.clientX, y: e.clientY, label: 'Mouse' };
     });
     canvas.addEventListener('mousemove', (e) => {
@@ -196,7 +221,10 @@
       }
     });
     window.addEventListener('mouseup', () => {
-      delete activePointers['mouse'];
+      if (activePointers['mouse']) {
+        lastPointers['mouse'] = activePointers['mouse'];
+        delete activePointers['mouse'];
+      }
     });
 
     resizeCanvas();

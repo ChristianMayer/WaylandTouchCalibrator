@@ -127,15 +127,14 @@
 
   <div class="container">
     <h1>Wayland Touch Calibrator</h1>
-    <p style="font-size: 1.2rem; color: #6c757d; margin-bottom: 20px;">Calculate libinput/Wayland
-      calibration matrices for touch screens using least squares minimization.</p>
+    <p style="font-size: 1.2rem; color: #6c757d; margin-bottom: 20px;">Calculate libinput/Wayland calibration matrices
+      for touch screens using least squares minimization.</p>
 
     <div style="background: #e9ecef; padding: 15px; border-radius: 6px; margin-bottom: 30px;">
       <strong>Step 1:</strong> Open the <a href="test.html" target="_blank"
-        style="font-weight: bold; color: #0d6efd;">Test Page</a> on the touch screen device
-      (fullscreen recommended).<br>
-      <strong>Step 2:</strong> Note the actual target coordinates vs the measured tap coordinates and
-      enter them below.
+        style="font-weight: bold; color: #0d6efd;">Test Page</a> on the touch screen device (fullscreen
+      recommended).<br>
+      <strong>Step 2:</strong> Note the actual target coordinates vs the measured tap coordinates and enter them below.
     </div>
 
     <h2>Screen Configuration</h2>
@@ -156,15 +155,19 @@
         <label>Offset Y (px)</label>
         <input type="number" id="cfg-oy" value="0" onchange="updateCalc()">
       </div>
+      <div class="input-group" style="grid-column: 1 / -1;">
+        <label>Currently Active Matrix (during test)</label>
+        <input type="text" id="cfg-am" value="1 0 0 0 1 0" placeholder="c0 c1 c2 c3 c4 c5" onchange="updateCalc()"
+          style="font-family: monospace;">
+      </div>
     </div>
 
     <h2>Calibration Points</h2>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-      <p style="margin: 0;">Enter the target coordinate you aimed for and the measured coordinate
-        where the touch actually registered.</p>
+      <p style="margin: 0;">Enter the target coordinate you aimed for and the measured coordinate where the touch
+        actually registered.</p>
       <button class="btn btn-danger" onclick="clearAll()"
-        style="padding: 6px 12px; font-size: 14px; white-space: nowrap; margin-left: 15px;">Clear
-        All</button>
+        style="padding: 6px 12px; font-size: 14px; white-space: nowrap; margin-left: 15px;">Clear All</button>
     </div>
     <div style="overflow-x: auto;">
       <table>
@@ -194,8 +197,7 @@
               </div>
             </td>
             <td colspan="3"><button class="btn" onclick="addPoint()"
-                style="width: 100%; margin: 0; min-width: 100px;">Add
-                Point</button></td>
+                style="width: 100%; margin: 0; min-width: 100px;">Add Point</button></td>
           </tr>
         </tfoot>
       </table>
@@ -231,6 +233,7 @@
         h: document.getElementById('cfg-h').value,
         ox: document.getElementById('cfg-ox').value,
         oy: document.getElementById('cfg-oy').value,
+        am: document.getElementById('cfg-am').value,
         points: points
       };
       const hash = btoa(JSON.stringify(state));
@@ -246,6 +249,7 @@
           if (state.h !== undefined) document.getElementById('cfg-h').value = state.h;
           if (state.ox !== undefined) document.getElementById('cfg-ox').value = state.ox;
           if (state.oy !== undefined) document.getElementById('cfg-oy').value = state.oy;
+          if (state.am !== undefined) document.getElementById('cfg-am').value = state.am;
           if (Array.isArray(state.points)) points = state.points;
         } catch (e) {
           console.error("Failed to parse state from URL");
@@ -387,7 +391,20 @@
       let e_norm = e;
       let f_norm = f / h;
 
-      outNorm.value = `${a_norm.toFixed(6)} ${b_norm.toFixed(6)} ${c_norm.toFixed(6)} ${d_norm.toFixed(6)} ${e_norm.toFixed(6)} ${f_norm.toFixed(6)}`;
+      let activeMatrixStr = document.getElementById('cfg-am').value || "1 0 0 0 1 0";
+      let mOld = activeMatrixStr.trim().split(/\s+/).map(parseFloat);
+      if (mOld.length !== 6 || mOld.some(isNaN)) {
+        mOld = [1, 0, 0, 0, 1, 0];
+      }
+
+      let n0 = a_norm * mOld[0] + b_norm * mOld[3];
+      let n1 = a_norm * mOld[1] + b_norm * mOld[4];
+      let n2 = a_norm * mOld[2] + b_norm * mOld[5] + c_norm;
+      let n3 = d_norm * mOld[0] + e_norm * mOld[3];
+      let n4 = d_norm * mOld[1] + e_norm * mOld[4];
+      let n5 = d_norm * mOld[2] + e_norm * mOld[5] + f_norm;
+
+      outNorm.value = `${n0.toFixed(6)} ${n1.toFixed(6)} ${n2.toFixed(6)} ${n3.toFixed(6)} ${n4.toFixed(6)} ${n5.toFixed(6)}`;
 
       // Update errors
       for (let p of points) {
