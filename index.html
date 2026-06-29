@@ -99,17 +99,22 @@
       border: 1px solid #ced4da;
       border-radius: 4px;
       font-size: 16px;
+      box-sizing: border-box;
     }
 
     input[type="text"] {
       padding: 12px;
       font-family: monospace;
       font-size: 16px;
-      background: #e9ecef;
+      background: white;
       border: 1px solid #ced4da;
       border-radius: 4px;
       width: 100%;
       box-sizing: border-box;
+    }
+
+    input[type="text"][readonly] {
+      background: #e9ecef;
     }
 
     .matrix-box {
@@ -288,6 +293,14 @@
       updateCalc();
     }
 
+    function editPoint(index, field, val) {
+      let num = parseFloat(val);
+      if (!isNaN(num)) {
+        points[index][field] = num;
+        updateCalc();
+      }
+    }
+
     function renderPoints() {
       let tbody = document.getElementById('points-body');
       tbody.innerHTML = '';
@@ -296,8 +309,18 @@
         if (!p.active) tr.style.opacity = '0.5';
 
         tr.innerHTML = `
-            <td>${p.tx}, ${p.ty}</td>
-            <td>${p.mx}, ${p.my}</td>
+            <td>
+                <div style="display: flex; gap: 8px;">
+                    <input type="number" value="${p.tx}" onchange="editPoint(${i}, 'tx', this.value)" style="width: 100%; min-width: 60px;">
+                    <input type="number" value="${p.ty}" onchange="editPoint(${i}, 'ty', this.value)" style="width: 100%; min-width: 60px;">
+                </div>
+            </td>
+            <td>
+                <div style="display: flex; gap: 8px;">
+                    <input type="number" value="${p.mx}" onchange="editPoint(${i}, 'mx', this.value)" style="width: 100%; min-width: 60px;">
+                    <input type="number" value="${p.my}" onchange="editPoint(${i}, 'my', this.value)" style="width: 100%; min-width: 60px;">
+                </div>
+            </td>
             <td><input type="checkbox" ${p.active ? 'checked' : ''} onchange="togglePoint(${i})"></td>
             <td style="font-family: monospace;">${p.active ? p.error.toFixed(2) : '-'}</td>
             <td><button class="btn btn-danger" style="padding: 4px 8px; margin: 0;" onclick="deletePoint(${i})">Del</button></td>
