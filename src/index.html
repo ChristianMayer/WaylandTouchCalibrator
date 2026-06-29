@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wayland Touch Calibrator</title>
+  <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, sans-serif;
+      background: #f8f9fa;
+      color: #212529;
+    }
+
+    .container {
+      padding: 40px 20px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 2.5rem;
+      font-weight: 600;
+    }
+
+    h2 {
+      border-bottom: 1px solid #dee2e6;
+      padding-bottom: 10px;
+      margin-top: 30px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #0d6efd;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn:hover {
+      background: #0b5ed7;
+    }
+
+    .btn-danger {
+      background: #dc3545;
+    }
+
+    .btn-danger:hover {
+      background: #bb2d3b;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    th,
+    td {
+      border: 1px solid #dee2e6;
+      padding: 8px;
+      text-align: center;
+    }
+
+    th {
+      background: #f8f9fa;
+      font-weight: 600;
+    }
+
+    .input-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .input-group label {
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+
+    input[type="number"] {
+      padding: 8px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 16px;
+    }
+
+    input[type="text"] {
+      padding: 12px;
+      font-family: monospace;
+      font-size: 16px;
+      background: #e9ecef;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .matrix-box {
+      margin-bottom: 20px;
+    }
+
+    .matrix-box h3 {
+      margin-bottom: 5px;
+      font-size: 1.1rem;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <h1>Wayland Touch Calibrator</h1>
+    <p style="font-size: 1.2rem; color: #6c757d; margin-bottom: 20px;">Calculate libinput/Wayland
+      calibration matrices for touch screens using least squares minimization.</p>
+
+    <div style="background: #e9ecef; padding: 15px; border-radius: 6px; margin-bottom: 30px;">
+      <strong>Step 1:</strong> Open the <a href="test.html" target="_blank"
+        style="font-weight: bold; color: #0d6efd;">Test Page</a> on the touch screen device
+      (fullscreen recommended).<br>
+      <strong>Step 2:</strong> Note the actual target coordinates vs the measured tap coordinates and
+      enter them below.
+    </div>
+
+    <h2>Screen Configuration</h2>
+    <div class="input-grid">
+      <div class="input-group">
+        <label>Screen Width (px)</label>
+        <input type="number" id="cfg-w" value="1920" onchange="updateCalc()">
+      </div>
+      <div class="input-group">
+        <label>Screen Height (px)</label>
+        <input type="number" id="cfg-h" value="1080" onchange="updateCalc()">
+      </div>
+      <div class="input-group">
+        <label>Offset X (px)</label>
+        <input type="number" id="cfg-ox" value="0" onchange="updateCalc()">
+      </div>
+      <div class="input-group">
+        <label>Offset Y (px)</label>
+        <input type="number" id="cfg-oy" value="0" onchange="updateCalc()">
+      </div>
+    </div>
+
+    <h2>Calibration Points</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+      <p style="margin: 0;">Enter the target coordinate you aimed for and the measured coordinate
+        where the touch actually registered.</p>
+      <button class="btn btn-danger" onclick="clearAll()"
+        style="padding: 6px 12px; font-size: 14px; white-space: nowrap; margin-left: 15px;">Clear
+        All</button>
+    </div>
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Target (X, Y)</th>
+            <th>Measured (X, Y)</th>
+            <th>Active</th>
+            <th>Error (px)</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="points-body">
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>
+              <div style="display: flex; gap: 8px;">
+                <input type="number" id="in-tx" placeholder="X" style="width: 100%; min-width: 60px;">
+                <input type="number" id="in-ty" placeholder="Y" style="width: 100%; min-width: 60px;">
+              </div>
+            </td>
+            <td>
+              <div style="display: flex; gap: 8px;">
+                <input type="number" id="in-mx" placeholder="X" style="width: 100%; min-width: 60px;">
+                <input type="number" id="in-my" placeholder="Y" style="width: 100%; min-width: 60px;">
+              </div>
+            </td>
+            <td colspan="3"><button class="btn" onclick="addPoint()"
+                style="width: 100%; margin: 0; min-width: 100px;">Add
+                Point</button></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <h2>Calculated Matrix</h2>
+    <p>Wayland config format: <code>c0 c1 c2 c3 c4 c5</code></p>
+
+    <div class="matrix-box">
+      <h3>Normalized Matrix (For libinput / Sway / swaymsg)</h3>
+      <input type="text" id="out-norm" readonly>
+    </div>
+
+    <div class="matrix-box">
+      <h3>Pixel Space Matrix</h3>
+      <input type="text" id="out-pixel" readonly>
+    </div>
+  </div>
+
+  <script>
+    let points = [];
+
+    function clearAll() {
+      if (confirm("Clear all points?")) {
+        points = [];
+        updateCalc();
+      }
+    }
+
+    function saveToUrl() {
+      const state = {
+        w: document.getElementById('cfg-w').value,
+        h: document.getElementById('cfg-h').value,
+        ox: document.getElementById('cfg-ox').value,
+        oy: document.getElementById('cfg-oy').value,
+        points: points
+      };
+      const hash = btoa(JSON.stringify(state));
+      history.replaceState(null, null, '#' + hash);
+    }
+
+    function loadFromUrl() {
+      if (window.location.hash.length > 1) {
+        try {
+          const hash = window.location.hash.substring(1);
+          const state = JSON.parse(atob(hash));
+          if (state.w !== undefined) document.getElementById('cfg-w').value = state.w;
+          if (state.h !== undefined) document.getElementById('cfg-h').value = state.h;
+          if (state.ox !== undefined) document.getElementById('cfg-ox').value = state.ox;
+          if (state.oy !== undefined) document.getElementById('cfg-oy').value = state.oy;
+          if (Array.isArray(state.points)) points = state.points;
+        } catch (e) {
+          console.error("Failed to parse state from URL");
+        }
+      }
+    }
+
+    function addPoint() {
+      let tx = parseFloat(document.getElementById('in-tx').value);
+      let ty = parseFloat(document.getElementById('in-ty').value);
+      let mx = parseFloat(document.getElementById('in-mx').value);
+      let my = parseFloat(document.getElementById('in-my').value);
+
+      if (isNaN(tx) || isNaN(ty) || isNaN(mx) || isNaN(my)) {
+        alert("Please enter valid numbers for all 4 coordinates.");
+        return;
+      }
+
+      points.push({ tx, ty, mx, my, active: true, error: 0 });
+
+      document.getElementById('in-tx').value = '';
+      document.getElementById('in-ty').value = '';
+      document.getElementById('in-mx').value = '';
+      document.getElementById('in-my').value = '';
+
+      updateCalc();
+    }
+
+    function togglePoint(index) {
+      points[index].active = !points[index].active;
+      updateCalc();
+    }
+
+    function deletePoint(index) {
+      points.splice(index, 1);
+      updateCalc();
+    }
+
+    function renderPoints() {
+      let tbody = document.getElementById('points-body');
+      tbody.innerHTML = '';
+      points.forEach((p, i) => {
+        let tr = document.createElement('tr');
+        if (!p.active) tr.style.opacity = '0.5';
+
+        tr.innerHTML = `
+            <td>${p.tx}, ${p.ty}</td>
+            <td>${p.mx}, ${p.my}</td>
+            <td><input type="checkbox" ${p.active ? 'checked' : ''} onchange="togglePoint(${i})"></td>
+            <td style="font-family: monospace;">${p.active ? p.error.toFixed(2) : '-'}</td>
+            <td><button class="btn btn-danger" style="padding: 4px 8px; margin: 0;" onclick="deletePoint(${i})">Del</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function invert3x3(m) {
+      const det = m[0] * m[4] * m[8] + m[1] * m[5] * m[6] + m[2] * m[3] * m[7]
+        - m[0] * m[5] * m[7] - m[1] * m[3] * m[8] - m[2] * m[4] * m[6];
+      if (Math.abs(det) < 1e-10) return null;
+      const inv = [];
+      inv[0] = (m[4] * m[8] - m[5] * m[7]) / det;
+      inv[1] = (m[2] * m[7] - m[1] * m[8]) / det;
+      inv[2] = (m[1] * m[5] - m[2] * m[4]) / det;
+      inv[3] = (m[5] * m[6] - m[3] * m[8]) / det;
+      inv[4] = (m[0] * m[8] - m[2] * m[6]) / det;
+      inv[5] = (m[2] * m[3] - m[0] * m[5]) / det;
+      inv[6] = (m[3] * m[7] - m[4] * m[6]) / det;
+      inv[7] = (m[1] * m[6] - m[0] * m[7]) / det;
+      inv[8] = (m[0] * m[4] - m[1] * m[3]) / det;
+      return inv;
+    }
+
+    function mult3x3_3x1(m, v) {
+      return [
+        m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
+        m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
+        m[6] * v[0] + m[7] * v[1] + m[8] * v[2]
+      ];
+    }
+
+    function updateCalc() {
+      let w = parseFloat(document.getElementById('cfg-w').value) || 1;
+      let h = parseFloat(document.getElementById('cfg-h').value) || 1;
+      let ox = parseFloat(document.getElementById('cfg-ox').value) || 0;
+      let oy = parseFloat(document.getElementById('cfg-oy').value) || 0;
+
+      let activePts = points.filter(p => p.active);
+      let outPixel = document.getElementById('out-pixel');
+      let outNorm = document.getElementById('out-norm');
+
+      if (activePts.length < 3) {
+        outPixel.value = "Need at least 3 active points for calculation.";
+        outNorm.value = "Need at least 3 active points for calculation.";
+        points.forEach(p => p.error = 0);
+        renderPoints();
+        saveToUrl();
+        return;
+      }
+
+      let ata = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+      let atbx = [0, 0, 0];
+      let atby = [0, 0, 0];
+
+      for (let p of activePts) {
+        let mx = p.mx;
+        let my = p.my;
+        let tx = p.tx + ox;
+        let ty = p.ty + oy;
+
+        ata[0] += mx * mx; ata[1] += mx * my; ata[2] += mx;
+        ata[3] += mx * my; ata[4] += my * my; ata[5] += my;
+        ata[6] += mx; ata[7] += my; ata[8] += 1;
+
+        atbx[0] += mx * tx; atbx[1] += my * tx; atbx[2] += tx;
+        atby[0] += mx * ty; atby[1] += my * ty; atby[2] += ty;
+      }
+
+      let inv = invert3x3(ata);
+      if (!inv) {
+        outPixel.value = "Singular matrix! Points might be collinear.";
+        outNorm.value = "";
+        saveToUrl();
+        return;
+      }
+
+      let cx = mult3x3_3x1(inv, atbx);
+      let cy = mult3x3_3x1(inv, atby);
+
+      let a = cx[0], b = cx[1], c = cx[2];
+      let d = cy[0], e = cy[1], f = cy[2];
+
+      outPixel.value = `${a.toFixed(6)} ${b.toFixed(6)} ${c.toFixed(6)} ${d.toFixed(6)} ${e.toFixed(6)} ${f.toFixed(6)}`;
+
+      let a_norm = a;
+      let b_norm = b * h / w;
+      let c_norm = c / w;
+      let d_norm = d * w / h;
+      let e_norm = e;
+      let f_norm = f / h;
+
+      outNorm.value = `${a_norm.toFixed(6)} ${b_norm.toFixed(6)} ${c_norm.toFixed(6)} ${d_norm.toFixed(6)} ${e_norm.toFixed(6)} ${f_norm.toFixed(6)}`;
+
+      // Update errors
+      for (let p of points) {
+        if (!p.active) {
+          p.error = 0;
+          continue;
+        }
+        let predX = a * p.mx + b * p.my + c;
+        let predY = d * p.mx + e * p.my + f;
+        let actX = p.tx + ox;
+        let actY = p.ty + oy;
+        p.error = Math.sqrt((predX - actX) ** 2 + (predY - actY) ** 2);
+      }
+
+      renderPoints();
+      saveToUrl();
+    }
+
+    document.querySelectorAll('tfoot input').forEach(inp => {
+      inp.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+          addPoint();
+        }
+      });
+    });
+
+    loadFromUrl();
+    updateCalc();
+  </script>
+</body>
+
+</html>

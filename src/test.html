@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Touch Test Pattern</title>
+  <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #111;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: crosshair;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="test-canvas"></canvas>
+  <script>
+    const canvas = document.getElementById('test-canvas');
+    const ctx = canvas.getContext('2d');
+    let activePointers = {};
+    let fingerCounter = 1;
+    let targets = [];
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      generateTargets();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    function generateTargets() {
+      let w = canvas.width;
+      let h = canvas.height;
+      let m = Math.min(100, Math.min(w, h) / 4);
+      targets = [
+        { x: m, y: m, label: 'T1' },
+        { x: w / 2, y: m, label: 'T2' },
+        { x: w - m, y: m, label: 'T3' },
+        { x: m, y: h / 2, label: 'T4' },
+        { x: w / 2, y: h / 2, label: 'T5' },
+        { x: w - m, y: h / 2, label: 'T6' },
+        { x: m, y: h - m, label: 'T7' },
+        { x: w / 2, y: h - m, label: 'T8' },
+        { x: w - m, y: h - m, label: 'T9' }
+      ].map(t => ({ x: Math.round(t.x), y: Math.round(t.y), label: t.label }));
+    }
+
+    function drawPatterns(w, h) {
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= w; x += 100) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+      for (let y = 0; y <= h; y += 100) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+      // Overscan border
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, w - 2, h - 2);
+
+      // Blue diagonals and diamond
+      ctx.strokeStyle = '#0055ff'; // Using a slightly brighter blue for dark background
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, 0); ctx.lineTo(w, h); // Diagonal TL to BR
+      ctx.moveTo(w, 0); ctx.lineTo(0, h); // Diagonal TR to BL
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(w / 2, 0); ctx.lineTo(w, h / 2);
+      ctx.lineTo(w / 2, h); ctx.lineTo(0, h / 2);
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.strokeStyle = '#444';
+      let rad = 50;
+      [[0, 0], [w, 0], [0, h], [w, h], [w / 2, h / 2]].forEach(pt => {
+        ctx.beginPath(); ctx.arc(pt[0], pt[1], rad, 0, 2 * Math.PI); ctx.stroke();
+        ctx.beginPath(); ctx.arc(pt[0], pt[1], rad * 2, 0, 2 * Math.PI); ctx.stroke();
+      });
+
+      // Overscan border
+      /*ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, w-2, h-2);*/
+    }
+
+    function drawTargets() {
+      ctx.strokeStyle = '#0f0';
+      ctx.fillStyle = '#0f0';
+      ctx.lineWidth = 2;
+      ctx.font = '20px monospace';
+
+      targets.forEach(t => {
+        ctx.beginPath();
+        ctx.moveTo(t.x - 30, t.y); ctx.lineTo(t.x + 30, t.y);
+        ctx.moveTo(t.x, t.y - 30); ctx.lineTo(t.x, t.y + 30);
+        ctx.stroke();
+
+        ctx.fillText(`${t.label}: ${t.x}, ${t.y}`, t.x + 15, t.y - 15);
+      });
+    }
+
+    function drawPointers() {
+      let w = canvas.width;
+      let h = canvas.height;
+      for (let id in activePointers) {
+        let pt = activePointers[id];
+        ctx.strokeStyle = '#f00';
+        ctx.fillStyle = '#f00';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pt.x - 40, pt.y); ctx.lineTo(pt.x + 40, pt.y);
+        ctx.moveTo(pt.x, pt.y - 40); ctx.lineTo(pt.x, pt.y + 40);
+        ctx.stroke();
+
+        ctx.font = '24px monospace';
+        let txt = `${pt.label}: ${Math.round(pt.x)}, ${Math.round(pt.y)}`;
+
+        let txtX = pt.x + 20;
+        let txtY = pt.y + 30;
+        if (txtX + 250 > w) txtX = pt.x - 250;
+        if (txtY > h - 10) txtY = pt.y - 30;
+
+        ctx.fillText(txt, txtX, txtY);
+      }
+    }
+
+    function testLoop() {
+      let w = canvas.width;
+      let h = canvas.height;
+
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, w, h);
+
+      drawPatterns(w, h);
+      drawTargets();
+      drawPointers();
+
+      requestAnimationFrame(testLoop);
+    }
+
+    function updateTouch(e) {
+      e.preventDefault();
+      let newActive = {};
+      for (let i = 0; i < e.touches.length; i++) {
+        let t = e.touches[i];
+        let idStr = 'touch_' + t.identifier;
+        let label = activePointers[idStr] ? activePointers[idStr].label : `Finger ${fingerCounter++}`;
+        newActive[idStr] = { x: t.clientX, y: t.clientY, label: label };
+      }
+      if (e.touches.length === 0) fingerCounter = 1;
+
+      // Keep mouse if exists
+      if (activePointers['mouse']) {
+        newActive['mouse'] = activePointers['mouse'];
+      }
+
+      activePointers = newActive;
+    }
+
+    canvas.addEventListener('touchstart', updateTouch, { passive: false });
+    canvas.addEventListener('touchmove', updateTouch, { passive: false });
+    canvas.addEventListener('touchend', updateTouch, { passive: false });
+    canvas.addEventListener('touchcancel', updateTouch, { passive: false });
+
+    canvas.addEventListener('mousedown', (e) => {
+      activePointers['mouse'] = { x: e.clientX, y: e.clientY, label: 'Mouse' };
+    });
+    canvas.addEventListener('mousemove', (e) => {
+      if (activePointers['mouse']) {
+        activePointers['mouse'] = { x: e.clientX, y: e.clientY, label: 'Mouse' };
+      }
+    });
+    window.addEventListener('mouseup', () => {
+      delete activePointers['mouse'];
+    });
+
+    resizeCanvas();
+    testLoop();
+  </script>
+</body>
+
+</html>
