@@ -212,13 +212,27 @@
     <p>Wayland config format: <code>c0 c1 c2 c3 c4 c5</code></p>
 
     <div class="matrix-box">
-      <h3>Normalized Matrix (For libinput / Sway / swaymsg)</h3>
+      <h3>Normalized Matrix (For libinput / Udev / Sway / swaymsg)</h3>
       <input type="text" id="out-norm" readonly>
     </div>
 
     <div class="matrix-box">
       <h3>Pixel Space Matrix</h3>
       <input type="text" id="out-pixel" readonly>
+    </div>
+
+    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+      <h2 style="margin-top: 0; border: none;">Documentation / Help</h2>
+
+      <h3>What is the "Normalized Matrix" vs "Pixel Space Matrix"?</h3>
+      <p><strong>Normalized Matrix:</strong> Wayland compositors (like Sway, Weston) and libinput use this matrix to
+        apply touch calibration independently of the actual screen resolution. It operates on normalized coordinates
+        ranging from 0.0 to 1.0 (e.g. <code>[0..1] x [0..1]</code> mapping to <code>[0..1] x [0..1]</code>). The format
+        is <code>c0 c1 c2 c3 c4 c5</code>.</p>
+
+      <p><strong>Pixel Space Matrix:</strong> This matrix maps input coordinates in absolute pixels directly to output
+        coordinates in pixels. It's used mostly for legacy X11 setups (like using <code>xinput set-prop</code>) or
+        custom applications that work directly with absolute pixel values rather than normalized ratios.</p>
     </div>
   </div>
 
@@ -378,23 +392,27 @@
       let atby = [0, 0, 0];
 
       for (let p of activePts) {
-        let mx = p.mx;
-        let my = p.my;
-        let tx = p.tx + ox;
-        let ty = p.ty + oy;
+        // Normalize coordinates to [0, 1] to prevent catastrophic cancellation
+        // for high resolution screens in the least squares matrix determinant
+        let mx_n = p.mx / w;
+        let my_n = p.my / h;
+        let tx_n = (p.tx + ox) / w;
+        let ty_n = (p.ty + oy) / h;
 
-        ata[0] += mx * mx; ata[1] += mx * my; ata[2] += mx;
-        ata[3] += mx * my; ata[4] += my * my; ata[5] += my;
-        ata[6] += mx; ata[7] += my; ata[8] += 1;
+        ata[0] += mx_n * mx_n; ata[1] += mx_n * my_n; ata[2] += mx_n;
+        ata[3] += mx_n * my_n; ata[4] += my_n * my_n; ata[5] += my_n;
+        ata[6] += mx_n; ata[7] += my_n; ata[8] += 1;
 
-        atbx[0] += mx * tx; atbx[1] += my * tx; atbx[2] += tx;
-        atby[0] += mx * ty; atby[1] += my * ty; atby[2] += ty;
+        atbx[0] += mx_n * tx_n; atbx[1] += my_n * tx_n; atbx[2] += tx_n;
+        atby[0] += mx_n * ty_n; atby[1] += my_n * ty_n; atby[2] += ty_n;
       }
 
       let inv = invert3x3(ata);
       if (!inv) {
         outPixel.value = "Singular matrix! Points might be collinear.";
         outNorm.value = "";
+        let helpMatrix = document.getElementById('help-matrix');
+        if (helpMatrix) helpMatrix.innerText = "1 0 0 0 1 0";
         saveToUrl();
         return;
       }
@@ -402,24 +420,31 @@
       let cx = mult3x3_3x1(inv, atbx);
       let cy = mult3x3_3x1(inv, atby);
 
-      let a = cx[0], b = cx[1], c = cx[2];
-      let d = cy[0], e = cy[1], f = cy[2];
+      // Results are directly in normalized space!
+      let a_norm = cx[0], b_norm = cx[1], c_norm = cx[2];
+      let d_norm = cy[0], e_norm = cy[1], f_norm = cy[2];
+
+      // Compute pixel space matrix for display purposes
+      let a = a_norm;
+      let b = b_norm * w / h;
+      let c = c_norm * w;
+      let d = d_norm * h / w;
+      let e = e_norm;
+      let f = f_norm * h;
 
       outPixel.value = `${a.toFixed(6)} ${b.toFixed(6)} ${c.toFixed(6)} ${d.toFixed(6)} ${e.toFixed(6)} ${f.toFixed(6)}`;
 
-      let a_norm = a;
-      let b_norm = b * h / w;
-      let c_norm = c / w;
-      let d_norm = d * w / h;
-      let e_norm = e;
-      let f_norm = f / h;
-
       let activeMatrixStr = document.getElementById('cfg-am').value || "1 0 0 0 1 0";
-      let mOld = activeMatrixStr.trim().split(/\s+/).map(parseFloat);
+      // Handle matrices separated by commas or spaces, and ignore extra parts if xinput 9-element matrix provided
+      let mOld = activeMatrixStr.replace(/,/g, ' ').trim().split(/\s+/).map(parseFloat);
+      if (mOld.length === 9 && !mOld.some(isNaN)) {
+        mOld = mOld.slice(0, 6);
+      }
       if (mOld.length !== 6 || mOld.some(isNaN)) {
         mOld = [1, 0, 0, 0, 1, 0];
       }
 
+      // M_new = M_correction * M_old
       let n0 = a_norm * mOld[0] + b_norm * mOld[3];
       let n1 = a_norm * mOld[1] + b_norm * mOld[4];
       let n2 = a_norm * mOld[2] + b_norm * mOld[5] + c_norm;
@@ -428,6 +453,9 @@
       let n5 = d_norm * mOld[2] + e_norm * mOld[5] + f_norm;
 
       outNorm.value = `${n0.toFixed(6)} ${n1.toFixed(6)} ${n2.toFixed(6)} ${n3.toFixed(6)} ${n4.toFixed(6)} ${n5.toFixed(6)}`;
+
+      let helpMatrix = document.getElementById('help-matrix');
+      if (helpMatrix) helpMatrix.innerText = outNorm.value;
 
       // Update errors
       for (let p of points) {
