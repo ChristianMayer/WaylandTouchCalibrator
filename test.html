@@ -98,6 +98,7 @@
     }
 
     function drawTargets() {
+      let w = canvas.width;
       ctx.strokeStyle = '#0f0';
       ctx.fillStyle = '#0f0';
       ctx.lineWidth = 2;
@@ -109,7 +110,17 @@
         ctx.moveTo(t.x, t.y - 30); ctx.lineTo(t.x, t.y + 30);
         ctx.stroke();
 
-        ctx.fillText(`${t.label}: ${t.x}, ${t.y}`, t.x + 15, t.y - 15);
+        let text = `${t.label}: ${t.x}, ${t.y}`;
+        let tw = ctx.measureText(text).width;
+        let txtX = t.x + 15;
+        if (txtX + tw > w - 10) {
+          txtX = t.x - 15 - tw;
+        }
+        let txtY = t.y - 15;
+        if (txtY < 20) {
+          txtY = t.y + 30;
+        }
+        ctx.fillText(text, txtX, txtY);
       });
     }
 
