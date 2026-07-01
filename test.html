@@ -28,6 +28,26 @@
 
 <body>
   <canvas id="test-canvas"></canvas>
+  <div id="data-panel" style="position: fixed; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.92); color: #fff; padding: 10px 15px; font-family: monospace; font-size: 14px; max-height: 260px; overflow-y: auto; z-index: 1000; display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <strong style="font-size: 16px;">📋 Recorded Measurements</strong>
+      <div>
+        <button id="copy-btn" style="background: #0d6efd; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; margin-right: 6px;">📋 Copy All</button>
+        <button id="clear-data-btn" style="background: #dc3545; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">🗑 Clear</button>
+      </div>
+    </div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr style="border-bottom: 1px solid #555;">
+          <th style="padding: 4px 8px; text-align: left;">Target</th>
+          <th style="padding: 4px 8px; text-align: left;">Target (X,Y)</th>
+          <th style="padding: 4px 8px; text-align: left;">Measured (X,Y)</th>
+          <th style="padding: 4px 8px; text-align: left;">Diff (px)</th>
+        </tr>
+      </thead>
+      <tbody id="data-body"></tbody>
+    </table>
+  </div>
   <script>
     const canvas = document.getElementById('test-canvas');
     const ctx = canvas.getContext('2d');
@@ -229,13 +249,103 @@
     });
     window.addEventListener('mouseup', () => {
       if (activePointers['mouse']) {
-        lastPointers['mouse'] = activePointers['mouse'];
+        let pt = activePointers['mouse'];
+        lastPointers['mouse'] = pt;
         delete activePointers['mouse'];
+        // Record mouse click (for testing on non-touch displays)
+        recordTouchOrClick(pt.x, pt.y, 'Mouse');
       }
     });
 
+    // After touchend/touchcancel, record the measurement
+    function recordTouchOrClick(x, y, label) {
+      let result = findNearestTarget(x, y);
+      if (result.dist < 150) {
+        recordedData.push({
+          targetLabel: result.target.label,
+          targetX: result.target.x,
+          targetY: result.target.y,
+          measuredX: Math.round(x),
+          measuredY: Math.round(y),
+          diff: Math.round(result.dist)
+        });
+        updateDataTable();
+        document.getElementById('data-panel').style.display = 'block';
+      }
+    }
+
+    function findNearestTarget(x, y) {
+      let best = null, bestDist = Infinity;
+      for (let t of targets) {
+        let d = Math.sqrt((t.x - x) ** 2 + (t.y - y) ** 2);
+        if (d < bestDist) { bestDist = d; best = t; }
+      }
+      return { target: best, dist: bestDist };
+    }
+
+    // The updateTouch function above (line 170) already handles touchend by
+    // moving pointers to lastPointers. We add recording logic there by
+    // re-registering the listener with a wrapper.
+    // Remove old listeners and add new ones that also record data
+    function touchHandlerWrapper(e) {
+      let ended = [];
+      if ((e.type === 'touchend' || e.type === 'touchcancel') && e.changedTouches) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          ended.push({ x: e.changedTouches[i].clientX, y: e.changedTouches[i].clientY });
+        }
+      }
+      updateTouch(e);
+      for (let et of ended) {
+        recordTouchOrClick(et.x, et.y, 'Touch');
+      }
+    }
+
+    // Replace touch listeners
+    canvas.removeEventListener('touchstart', updateTouch);
+    canvas.removeEventListener('touchmove', updateTouch);
+    canvas.removeEventListener('touchend', updateTouch);
+    canvas.removeEventListener('touchcancel', updateTouch);
+    canvas.addEventListener('touchstart', touchHandlerWrapper, { passive: false });
+    canvas.addEventListener('touchmove', touchHandlerWrapper, { passive: false });
+    canvas.addEventListener('touchend', touchHandlerWrapper, { passive: false });
+    canvas.addEventListener('touchcancel', touchHandlerWrapper, { passive: false });
+
     resizeCanvas();
     testLoop();
+
+    // --- Data table UI ---
+    let recordedData = [];
+
+    function updateDataTable() {
+      let tbody = document.getElementById('data-body');
+      tbody.innerHTML = '';
+      for (let d of recordedData) {
+        let tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #333';
+        tr.innerHTML =
+          `<td style="padding: 3px 8px;">${d.targetLabel}</td>` +
+          `<td style="padding: 3px 8px;">${d.targetX}, ${d.targetY}</td>` +
+          `<td style="padding: 3px 8px;">${d.measuredX}, ${d.measuredY}</td>` +
+          `<td style="padding: 3px 8px;">${d.diff}px</td>`;
+        tbody.appendChild(tr);
+      }
+    }
+
+    document.getElementById('copy-btn').addEventListener('click', () => {
+      let text = recordedData.map(d =>
+        `${d.targetX} ${d.targetY} ${d.measuredX} ${d.measuredY}`
+      ).join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+        let btn = document.getElementById('copy-btn');
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => { btn.textContent = '📋 Copy All'; }, 2000);
+      });
+    });
+    document.getElementById('clear-data-btn').addEventListener('click', () => {
+      recordedData = [];
+      updateDataTable();
+      document.getElementById('data-panel').style.display = 'none';
+    });
   </script>
 </body>
 

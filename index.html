@@ -145,19 +145,29 @@
     <h2>Screen Configuration</h2>
     <div class="input-grid">
       <div class="input-group">
-        <label>Screen Width (px)</label>
+        <label>Test Area Width (px)</label>
         <input type="number" id="cfg-w" value="1920" onchange="updateCalc()">
       </div>
       <div class="input-group">
-        <label>Screen Height (px)</label>
+        <label>Test Area Height (px)</label>
         <input type="number" id="cfg-h" value="1080" onchange="updateCalc()">
       </div>
-      <div class="input-group">
-        <label>Offset X (px)</label>
+      <div class="input-group"
+        title="The total width the touch sensor is mapped to by the compositor (e.g., 2048 for side-by-side dual monitors)">
+        <label>Sensor Mapped Width</label>
+        <input type="number" id="cfg-mw" value="1920" onchange="updateCalc()">
+      </div>
+      <div class="input-group" title="The total height the touch sensor is mapped to by the compositor">
+        <label>Sensor Mapped Height</label>
+        <input type="number" id="cfg-mh" value="1080" onchange="updateCalc()">
+      </div>
+      <div class="input-group"
+        title="The X offset of the test area within the mapped sensor area (e.g., 1024 if on a second monitor)">
+        <label>Test Area Offset X</label>
         <input type="number" id="cfg-ox" value="0" onchange="updateCalc()">
       </div>
-      <div class="input-group">
-        <label>Offset Y (px)</label>
+      <div class="input-group" title="The Y offset of the test area within the mapped sensor area">
+        <label>Test Area Offset Y</label>
         <input type="number" id="cfg-oy" value="0" onchange="updateCalc()">
       </div>
       <div class="input-group" style="grid-column: 1 / -1;">
@@ -212,7 +222,7 @@
     <p>Wayland config format: <code>c0 c1 c2 c3 c4 c5</code></p>
 
     <div class="matrix-box">
-      <h3>Normalized Matrix (For libinput / Udev / Sway / swaymsg)</h3>
+      <h3>Normalized Matrix (For libinput / Sway / swaymsg)</h3>
       <input type="text" id="out-norm" readonly>
     </div>
 
@@ -225,14 +235,48 @@
       <h2 style="margin-top: 0; border: none;">Documentation / Help</h2>
 
       <h3>What is the "Normalized Matrix" vs "Pixel Space Matrix"?</h3>
-      <p><strong>Normalized Matrix:</strong> Wayland compositors (like Sway, Weston) and libinput use this matrix to
-        apply touch calibration independently of the actual screen resolution. It operates on normalized coordinates
+      <p><strong>Normalized Matrix:</strong> Wayland compositors (like Sway, Labwc, Weston) and libinput use this matrix
+        to apply touch calibration independently of the actual screen resolution. It operates on normalized coordinates
         ranging from 0.0 to 1.0 (e.g. <code>[0..1] x [0..1]</code> mapping to <code>[0..1] x [0..1]</code>). The format
         is <code>c0 c1 c2 c3 c4 c5</code>.</p>
 
       <p><strong>Pixel Space Matrix:</strong> This matrix maps input coordinates in absolute pixels directly to output
         coordinates in pixels. It's used mostly for legacy X11 setups (like using <code>xinput set-prop</code>) or
         custom applications that work directly with absolute pixel values rather than normalized ratios.</p>
+
+      <div style="background: #e0f7fa; padding: 15px; border-left: 4px solid #00acc1; margin-top: 20px;">
+        <h4 style="margin-top: 0; color: #00838f;">Multi-Monitor Setups (Labwc & Sway)</h4>
+        <p>If you have multiple monitors (e.g., a second screen with an offset of 1024), <strong>do not try to fix the
+            offset using the calibration matrix alone unless necessary</strong>. Wayland compositors by default map
+          touchscreens to the entire combined desktop area, which causes the stretching and offset issues you described.
+        </p>
+        <p><strong>Option A (Recommended if device names differ):</strong> Tell the compositor to map the touchscreen to
+          the specific monitor. Once mapped, set your <strong>Sensor Mapped Width/Height</strong> to match the single
+          screen's resolution (e.g., 1024x768) and <strong>Test Area Offset X/Y</strong> to 0.</p>
+        <ul style="margin-top: 5px; margin-bottom: 10px;">
+          <li><strong>Labwc:</strong> In <code>rc.xml</code> add:
+            <code>&lt;touch deviceName="Your Touch" mapToOutput="HDMI-A-1" /&gt;</code></li>
+          <li><strong>Sway:</strong> In <code>config</code> add:
+            <code>input "Your:Identifier" map_to_output HDMI-A-1</code></li>
+        </ul>
+
+        <h4 style="margin-top: 15px; color: #00838f;">Advanced: Identical Touchscreens (Bypassing compositor
+          limitations)</h4>
+        <p>If you have two identical touchscreens (same device name) and the compositor (like Labwc) cannot distinguish
+          them, or ignores <code>WL_OUTPUT</code> in udev, you can bake the multi-monitor mapping directly into the
+          <code>LIBINPUT_CALIBRATION_MATRIX</code> via udev.</p>
+        <ol style="margin-top: 5px; padding-left: 20px;">
+          <li>Set <strong>Sensor Mapped Width/Height</strong> to the <em>total combined desktop size</em> (e.g., 2048 x
+            768).</li>
+          <li>Set <strong>Test Area Width/Height</strong> to the single monitor's size (e.g., 1024 x 768).</li>
+          <li>Set <strong>Test Area Offset X/Y</strong> to the monitor's position (e.g., X=0 for left, X=1024 for
+            right).</li>
+          <li>Run calibration. The resulting Normalized Matrix will scale and translate the touch perfectly into its
+            half of the screen.</li>
+          <li>Assign this matrix in a <code>udev</code> rule by matching the physical USB port
+            (<code>KERNELS=="1-1.3:1.0"</code>).</li>
+        </ol>
+      </div>
     </div>
   </div>
 
@@ -250,6 +294,8 @@
       const state = {
         w: document.getElementById('cfg-w').value,
         h: document.getElementById('cfg-h').value,
+        mw: document.getElementById('cfg-mw').value,
+        mh: document.getElementById('cfg-mh').value,
         ox: document.getElementById('cfg-ox').value,
         oy: document.getElementById('cfg-oy').value,
         am: document.getElementById('cfg-am').value,
@@ -266,6 +312,8 @@
           const state = JSON.parse(atob(hash));
           if (state.w !== undefined) document.getElementById('cfg-w').value = state.w;
           if (state.h !== undefined) document.getElementById('cfg-h').value = state.h;
+          if (state.mw !== undefined) document.getElementById('cfg-mw').value = state.mw;
+          if (state.mh !== undefined) document.getElementById('cfg-mh').value = state.mh;
           if (state.ox !== undefined) document.getElementById('cfg-ox').value = state.ox;
           if (state.oy !== undefined) document.getElementById('cfg-oy').value = state.oy;
           if (state.am !== undefined) document.getElementById('cfg-am').value = state.am;
@@ -371,6 +419,8 @@
     function updateCalc() {
       let w = parseFloat(document.getElementById('cfg-w').value) || 1;
       let h = parseFloat(document.getElementById('cfg-h').value) || 1;
+      let mw = parseFloat(document.getElementById('cfg-mw').value) || w;
+      let mh = parseFloat(document.getElementById('cfg-mh').value) || h;
       let ox = parseFloat(document.getElementById('cfg-ox').value) || 0;
       let oy = parseFloat(document.getElementById('cfg-oy').value) || 0;
 
@@ -392,12 +442,12 @@
       let atby = [0, 0, 0];
 
       for (let p of activePts) {
-        // Normalize coordinates to [0, 1] to prevent catastrophic cancellation
-        // for high resolution screens in the least squares matrix determinant
-        let mx_n = p.mx / w;
-        let my_n = p.my / h;
-        let tx_n = (p.tx + ox) / w;
-        let ty_n = (p.ty + oy) / h;
+        // Normalize coordinates to [0, 1] relative to the overall sensor mapped area
+        // to prevent catastrophic cancellation and ensure libinput compatibility
+        let mx_n = (p.mx + ox) / mw;
+        let my_n = (p.my + oy) / mh;
+        let tx_n = (p.tx + ox) / mw;
+        let ty_n = (p.ty + oy) / mh;
 
         ata[0] += mx_n * mx_n; ata[1] += mx_n * my_n; ata[2] += mx_n;
         ata[3] += mx_n * my_n; ata[4] += my_n * my_n; ata[5] += my_n;
@@ -413,6 +463,8 @@
         outNorm.value = "";
         let helpMatrix = document.getElementById('help-matrix');
         if (helpMatrix) helpMatrix.innerText = "1 0 0 0 1 0";
+        let helpMatrixLabwc = document.getElementById('help-matrix-labwc');
+        if (helpMatrixLabwc) helpMatrixLabwc.innerText = "1 0 0 0 1 0";
         saveToUrl();
         return;
       }
@@ -424,13 +476,13 @@
       let a_norm = cx[0], b_norm = cx[1], c_norm = cx[2];
       let d_norm = cy[0], e_norm = cy[1], f_norm = cy[2];
 
-      // Compute pixel space matrix for display purposes
+      // Compute pixel space matrix for display purposes (maps (mx,my) → test-area pixel coords)
       let a = a_norm;
-      let b = b_norm * w / h;
-      let c = c_norm * w;
-      let d = d_norm * h / w;
+      let b = b_norm * mw / mh;
+      let c = a_norm * ox + b_norm * oy * mw / mh + c_norm * mw - ox;
+      let d = d_norm * mh / mw;
       let e = e_norm;
-      let f = f_norm * h;
+      let f = d_norm * ox * mh / mw + e_norm * oy + f_norm * mh - oy;
 
       outPixel.value = `${a.toFixed(6)} ${b.toFixed(6)} ${c.toFixed(6)} ${d.toFixed(6)} ${e.toFixed(6)} ${f.toFixed(6)}`;
 
@@ -457,6 +509,9 @@
       let helpMatrix = document.getElementById('help-matrix');
       if (helpMatrix) helpMatrix.innerText = outNorm.value;
 
+      let helpMatrixLabwc = document.getElementById('help-matrix-labwc');
+      if (helpMatrixLabwc) helpMatrixLabwc.innerText = outNorm.value;
+
       // Update errors
       for (let p of points) {
         if (!p.active) {
@@ -465,9 +520,7 @@
         }
         let predX = a * p.mx + b * p.my + c;
         let predY = d * p.mx + e * p.my + f;
-        let actX = p.tx + ox;
-        let actY = p.ty + oy;
-        p.error = Math.sqrt((predX - actX) ** 2 + (predY - actY) ** 2);
+        p.error = Math.sqrt((predX - p.tx) ** 2 + (predY - p.ty) ** 2);
       }
 
       renderPoints();
