@@ -325,13 +325,19 @@
     }
 
     function addPoint() {
-      let tx = parseFloat(document.getElementById('in-tx').value);
-      let ty = parseFloat(document.getElementById('in-ty').value);
-      let mx = parseFloat(document.getElementById('in-mx').value);
-      let my = parseFloat(document.getElementById('in-my').value);
+      let txVal = document.getElementById('in-tx').value;
+      let tyVal = document.getElementById('in-ty').value;
+      let mxVal = document.getElementById('in-mx').value;
+      let myVal = document.getElementById('in-my').value;
 
-      if (isNaN(tx) || isNaN(ty) || isNaN(mx) || isNaN(my)) {
-        alert("Please enter valid numbers for all 4 coordinates.");
+      let tx = txVal === '' ? null : parseFloat(txVal);
+      let ty = tyVal === '' ? null : parseFloat(tyVal);
+      let mx = mxVal === '' ? null : parseFloat(mxVal);
+      let my = myVal === '' ? null : parseFloat(myVal);
+
+      // Allow adding points with partial data — empty fields become null
+      if (tx === null && ty === null && mx === null && my === null) {
+        alert("Please enter at least one coordinate.");
         return;
       }
 
@@ -356,11 +362,15 @@
     }
 
     function editPoint(index, field, val) {
-      let num = parseFloat(val);
-      if (!isNaN(num)) {
-        points[index][field] = num;
-        updateCalc();
+      if (val === '') {
+        points[index][field] = null;
+      } else {
+        let num = parseFloat(val);
+        if (!isNaN(num)) {
+          points[index][field] = num;
+        }
       }
+      updateCalc();
     }
 
     function renderPoints() {
@@ -370,21 +380,22 @@
         let tr = document.createElement('tr');
         if (!p.active) tr.style.opacity = '0.5';
 
+        const hasAllCoords = p.tx !== null && p.ty !== null && p.mx !== null && p.my !== null;
         tr.innerHTML = `
             <td>
                 <div style="display: flex; gap: 8px;">
-                    <input type="number" value="${p.tx}" onchange="editPoint(${i}, 'tx', this.value)" style="width: 100%; min-width: 60px;">
-                    <input type="number" value="${p.ty}" onchange="editPoint(${i}, 'ty', this.value)" style="width: 100%; min-width: 60px;">
+                    <input type="number" value="${p.tx !== null ? p.tx : ''}" onchange="editPoint(${i}, 'tx', this.value)" style="width: 100%; min-width: 60px;">
+                    <input type="number" value="${p.ty !== null ? p.ty : ''}" onchange="editPoint(${i}, 'ty', this.value)" style="width: 100%; min-width: 60px;">
                 </div>
             </td>
             <td>
                 <div style="display: flex; gap: 8px;">
-                    <input type="number" value="${p.mx}" onchange="editPoint(${i}, 'mx', this.value)" style="width: 100%; min-width: 60px;">
-                    <input type="number" value="${p.my}" onchange="editPoint(${i}, 'my', this.value)" style="width: 100%; min-width: 60px;">
+                    <input type="number" value="${p.mx !== null ? p.mx : ''}" onchange="editPoint(${i}, 'mx', this.value)" style="width: 100%; min-width: 60px;">
+                    <input type="number" value="${p.my !== null ? p.my : ''}" onchange="editPoint(${i}, 'my', this.value)" style="width: 100%; min-width: 60px;">
                 </div>
             </td>
             <td><input type="checkbox" ${p.active ? 'checked' : ''} onchange="togglePoint(${i})"></td>
-            <td style="font-family: monospace;">${p.active ? p.error.toFixed(2) : '-'}</td>
+            <td style="font-family: monospace;">${p.active && hasAllCoords ? p.error.toFixed(2) : '-'}</td>
             <td><button class="btn btn-danger" style="padding: 4px 8px; margin: 0;" onclick="deletePoint(${i})">Del</button></td>
         `;
         tbody.appendChild(tr);
@@ -424,7 +435,7 @@
       let ox = parseFloat(document.getElementById('cfg-ox').value) || 0;
       let oy = parseFloat(document.getElementById('cfg-oy').value) || 0;
 
-      let activePts = points.filter(p => p.active);
+      let activePts = points.filter(p => p.active && p.tx !== null && p.ty !== null && p.mx !== null && p.my !== null);
       let outPixel = document.getElementById('out-pixel');
       let outNorm = document.getElementById('out-norm');
 
@@ -461,6 +472,8 @@
       if (!inv) {
         outPixel.value = "Singular matrix! Points might be collinear.";
         outNorm.value = "";
+        points.forEach(p => p.error = 0);
+        renderPoints();
         let helpMatrix = document.getElementById('help-matrix');
         if (helpMatrix) helpMatrix.innerText = "1 0 0 0 1 0";
         let helpMatrixLabwc = document.getElementById('help-matrix-labwc');
@@ -514,7 +527,7 @@
 
       // Update errors
       for (let p of points) {
-        if (!p.active) {
+        if (!p.active || p.tx === null || p.ty === null || p.mx === null || p.my === null) {
           p.error = 0;
           continue;
         }
